@@ -1,0 +1,68 @@
+# ============ 多应用 SSO 网关配置模板 ============
+# 复制为 apps.yaml 后填写真实值；apps.yaml 含密钥，已被 .gitignore / .dockerignore 排除
+# 每新增一个目标应用：
+#   1. 在 Authentik 新建 OAuth2/OpenID Connect Provider（独立 Client ID/Secret），
+#      回调地址填 https://<网关对外地址>/sso/<slug>/callback
+#   2. 在下方 apps 段追加一组配置
+#   3. 若目标协议与现有 handler 不同，在 handlers/ 目录新增插件模块并登记
+#   4. docker compose restart 即可生效（apps.yaml 以挂载方式注入，无需重建镜像）
+
+apps:
+  # 应用标识（slug）：决定访问路径 /sso/163mail 与回调 /sso/163mail/callback，
+  # 仅允许字母数字连字符下划线
+  163mail:
+    # 该应用在 Authentik 中对应的 OAuth2 Provider 凭证（每个应用独立）
+    authentik:
+      client_id: 你的_CLIENT_ID
+      client_secret: 你的_CLIENT_SECRET
+      # OpenID Configuration URL（以 /.well-known/openid-configuration 结尾）
+      # 格式：https://<authentik域名>/application/o/<应用slug>/.well-known/openid-configuration
+      metadata_url: https://your-authentik.com/application/o/163mail/.well-known/openid-configuration
+
+    # 协议转换插件：对应 handlers/ 下注册的 handler 名（当前可用：netease_mail）
+    handler: netease_mail
+
+    # 该 handler 所需的业务参数（网易企业邮箱开放平台，见官方接口文档）
+    config:
+      # 网易 API 域名（以网易文档为准）
+      api_host: https://api.qiye.163.com
+      # 应用ID（qiye-app-id）
+      app_id: 你的_网易_APP_ID
+      # 应用授权码 authCode（接口① /api/pub/token/ssoAuthToken 使用）
+      auth_code: 你的_网易_应用授权码
+      # 企业OpenId（qiye-org-open-id）
+      org_open_id: 你的_网易_企业OPENID
+
+  # 金蝶 K3Cloud（简单通行证 SimPas：本地签名免登录，零网络调用）
+  # 前置：K3Cloud 管理端 Administrator → 系统管理 → 第三方系统登录授权，
+  # 新增应用得 appId / appSecret（授权方式建议"允许全部用户登录"），并记录数据中心 ID（dbid）
+  k3cloud:
+    authentik:
+      client_id: 你的_CLIENT_ID
+      client_secret: 你的_CLIENT_SECRET
+      metadata_url: https://your-authentik.com/application/o/k3cloud/.well-known/openid-configuration
+
+    handler: k3cloud
+
+    config:
+      # K3Cloud 站点根地址（用户浏览器可访问的公网地址，末尾不带斜杠）
+      base_url: https://k3.example.com/K3Cloud
+      # 数据中心 ID（K3Cloud 管理端查看）
+      dbid: 你的_数据中心ID
+      # 第三方系统登录授权中的应用 ID 与密钥
+      app_id: 你的_金蝶_APP_ID
+      app_secret: 你的_金蝶_应用密钥
+      # 允许登录次数：0 可重复登录（默认），1 仅一次
+      permitcount: 0
+      # 语言 ID：2052 中文（默认）/ 1033 英文 / 3076 繁体
+      lcid: 2052
+
+  # ---- 以下为未来新增应用的示例（按需复制修改后取消注释） ----
+  # another-app:
+  #   authentik:
+  #     client_id: xxx
+  #     client_secret: yyy
+  #     metadata_url: https://your-authentik.com/application/o/another-app/.well-known/openid-configuration
+  #   handler: your_new_handler
+  #   config:
+  #     key: value

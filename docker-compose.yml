@@ -1,0 +1,38 @@
+services:
+  authentik-sso-gateway:
+    # 基于 Dockerfile 构建（python:3.12-slim + gunicorn）
+    build: .
+    container_name: authentik-sso-gateway
+    restart: unless-stopped
+    ports:
+      # 宿主机 9010 → 容器 9010（所有环境统一 9010，好记忆）
+      - '9010:9010'
+    env_file:
+      # 全局配置（SECRET_KEY / BASE_URL 等）通过 .env 注入，不打入镜像
+      - .env
+    environment:
+      # 容器时区：日志时间戳与按天轮转对齐北京时间（python:3.12-slim 自带 tzdata，直接生效）
+      - TZ=Asia/Shanghai
+    volumes:
+      # 代码 + apps.yaml 整目录挂载：改代码/配置只需 restart，无需重建镜像
+      - ./src:/app
+      # 日志目录挂载到宿主机：logs/sso-gateway.log 按天轮转、保留 30 天
+      - ./logs:/app/logs
+    healthcheck:
+      # 动态拼接 SCRIPT_NAME（同域路径发布时 healthz 也带前缀），探测容器自身 gunicorn
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:9010' + os.getenv('SCRIPT_NAME', '') + '/healthz')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

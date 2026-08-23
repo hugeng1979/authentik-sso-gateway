@@ -1,0 +1,18 @@
+# 环境变量与多应用配置含密钥，严禁打包进镜像（.env 由 compose env_file 注入，apps.yaml 随 src 挂载）
+.env
+src/apps.yaml
+
+# Python 产物
+__pycache__/
+*.pyc
+.venv/
+
+# 系统文件
+.DS_Store
+
+# 运行日志（容器内由 volume 挂载生成，不打进镜像）
+logs/
+src/logs/
+
+# 代码目录整体由 compose 挂载注入，镜像只需 requirements.txt
+src/
