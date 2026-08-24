@@ -12,7 +12,7 @@
 当前已实现：
 
 - **网易企业邮箱**（`handlers/netease_mail.py`）：Authentik 认证后调用网易开放平台 API 两次换取免密登录 Sign
-- **金蝶 K3Cloud**（`handlers/k3cloud.py`）：简单通行证（SimPas）模式，Authentik 认证后本地 SHA256 签名生成免密登录 URL（零网络调用），用户名取 Authentik 的 `preferred_username`
+- **金蝶 K3Cloud**（`handlers/k3cloud.py`）：简单通行证（SimPas）模式，Authentik 认证后本地 SHA256 签名生成免密登录 URL（零网络调用），用户名取 Authentik 的 `preferred_username`；`entry: wpf` 时生成 `k3cloud://` 协议地址唤起 Windows 客户端（如 `k3client` 应用），默认 `html5` 为网页入口
 
 > **反向场景**：若需让用户用钉钉扫码**登录 Authentik**（Authentik 作为 OIDC 客户端接入钉钉，即 Source 方向），使用独立部署的 [dingtalk-oidc-gateway](https://github.com/sqkkyzx/dingtalk-oidc-gateway)
 
@@ -85,6 +85,14 @@
 2. 记录**数据中心 ID**（`dbid`，K3Cloud 管理端查看）
 3. 确认 K3Cloud 对用户浏览器的访问地址（`base_url`，公网 https 形态，末尾不带斜杠）
 4. 确认 K3Cloud 用户名与 Authentik 用户名（`preferred_username`）完全一致（handler 依赖它定位 K3 账号）
+
+> **Windows 客户端入口**（可选双入口）：K3Cloud 管理端零额外配置，提供与网页版并行的客户端唤起入口：
+> 1. `apps.yaml` 复制 k3cloud 段为新 slug `k3client`：业务参数（base_url/dbid/app_id/app_secret/permitcount/lcid）完全相同，仅加 `entry: wpf`（`apps.yaml.example` 已含现成示例段）
+> 2. Authentik 新建**独立** Provider（回调本地 `http://127.0.0.1:9010/sso/k3client/callback` + 生产两行）与 Application（Launch URL `https://<网关对外地址>/sso/k3client`）
+> 3. 体验：登录后经网关**落地页**唤起（Safari/Firefox 自动唤起；Chrome/Edge 因浏览器安全策略需点击一次"启动"按钮——腾讯会议/Zoom 网页唤起同款；唤起成功后页面 3 秒尝试自动关闭，部分浏览器需手动关闭）→ 本机金蝶客户端自动登录（**需电脑已安装金蝶 ClickOnce 客户端**）
+> 4. 建议两个 Application 命名区分（如"金蝶K3（网页）"/"金蝶K3（客户端）"），图标复用同一金蝶图
+>
+> 实测经验：wpf 地址中的 `LoginUrl` 必须为未编码裸值（金蝶 ClickOnce 不认编码后的地址，已固化在 handler 实现中）。
 
 > 签名含时间戳且 K3Cloud 服务端校验时间窗，网关宿主机时钟需 NTP 校准。
 
@@ -208,3 +216,4 @@ pip install -r requirements.txt
 - **本地 9010 端口启动失败**：端口被其他程序占用时可更换端口（改 `.env` 的 `PORT`），并同步修改 Authentik 回调地址
 - **网易接口返回失败**：检查 apps.yaml 中 `app_id` / `auth_code` / `org_open_id` 是否正确、网易侧应用状态是否启用；接口返回的 `code` / `message` 会记录在容器日志中，可据此排查
 - **金蝶登录失败（页面提示签名或授权无效）**：依次检查 ① `dbid` / `app_id` / `app_secret` 是否与 K3Cloud【第三方系统登录授权】中一致 ② K3Cloud 用户名与 Authentik 用户名是否一致 ③ 宿主机时钟是否 NTP 准确（时间戳超时窗失效）④ 该用户是否在授权范围内（若选了"指定用户登录"）
+- **点"金蝶K3（客户端）"图标无反应或提示找不到应用**：① 电脑未安装金蝶 ClickOnce 客户端（安装后重试）② 浏览器弹出的确认框被取消/拦截，点击落地页上的"点击此处重试"即可 ③ 若网关日志已有 `entry=wpf` 签名记录则网关侧正常，问题在本机客户端环境。**标签页停在"正在启动金蝶K3客户端"提示页属预期行为**（客户端启动后可自动关闭或手动关闭）

@@ -13,6 +13,8 @@
 5. 302 重定向到该 URL，完成单点登录
 """
 
+import html
+import json
 import logging
 import logging.handlers
 import os
@@ -136,6 +138,61 @@ def build_redirect_uri(slug):
     return url_for("sso_callback", slug=slug, _external=True)
 
 
+# 自定义协议唤起落地页模板：页面加载时自动尝试唤起协议处理器（如 k3cloud:// 客户端），
+# 但 Chrome/Edge 安全策略要求脚本跳转协议需"瞬时用户手势"，过期则静默拦截——
+# 故主 UI 为醒目大按钮兜底（腾讯会议/Zoom 网页唤起同款模式）；3 秒后尝试自动关闭标签页
+LAUNCH_PAGE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>启动金蝶K3客户端</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; text-align: center; padding-top: 70px; color: #333; background: #f5f6f8; }}
+  .btn {{ display: inline-block; margin-top: 24px; padding: 14px 48px; font-size: 18px;
+         color: #fff; background: #1a6fce; border: none; border-radius: 8px;
+         cursor: pointer; text-decoration: none; }}
+  .btn:hover {{ background: #1559a8; }}
+  .tip {{ margin-top: 18px; color: #999; font-size: 14px; }}
+</style>
+</head>
+<body>
+<h2 id="title">启动金蝶K3客户端</h2>
+<a class="btn" id="launch-btn" href="{launch_url}">启动金蝶K3客户端</a>
+<p class="tip" id="tip">若未自动启动，请点击上方按钮（浏览器安全要求）</p>
+<p class="tip">客户端已启动时，此页面可安全关闭</p>
+<script>
+  var launchUrl = {launch_url_json};
+  // 页面加载即自动尝试唤起（Safari/Firefox 无手势限制可零点击成功；Chrome/Edge 会被静默拦截，靠按钮兜底）
+  location.href = launchUrl;
+  // 尝试关闭标签页（浏览器仅允许脚本关闭脚本打开的窗口，失败则停留提示页）
+  function tryClose() {{ try {{ window.close(); }} catch (e) {{}} }}
+  // 自动唤起路径：3 秒后尝试关闭
+  setTimeout(tryClose, 3000);
+  // 点击按钮路径：唤起后多次尝试关闭，并更新提示文案给出明确收尾指引
+  document.getElementById("launch-btn").addEventListener("click", function () {{
+    setTimeout(function () {{
+      tryClose(); setTimeout(tryClose, 1000); setTimeout(tryClose, 2000);
+      var tip = document.getElementById("tip");
+      if (tip) {{
+        tip.textContent = "客户端已启动，本页面即将关闭；若未自动关闭，可手动关闭";
+      }}
+    }}, 500);
+  }});
+</script>
+</body>
+</html>"""
+
+
+def render_launch_page(launch_url):
+    """渲染自定义协议唤起落地页：URL 经 HTML 与 JS 双重转义后嵌入，防注入"""
+    return LAUNCH_PAGE.format(
+        launch_url=html.escape(launch_url, quote=True),
+        # JS 嵌入值：json.dumps 已处理引号/反斜杠等，再把 "<" 转为 \u003c 防 "</script>" 提前闭合；
+        # script 块内浏览器按原始 JS 解析，不能做 HTML 实体转义
+        launch_url_json=json.dumps(launch_url).replace("<", "<\\u003c"),
+    )
+
+
 @app.route("/sso/<slug>")
 def sso_entry(slug):
     """单点登录入口：引导用户去 Authentik 认证（使用该应用独立的 OAuth 客户端）"""
@@ -166,7 +223,11 @@ def sso_callback(slug):
         login_url = handler.handle(user_info, conf.get("config") or {})
 
         if login_url:
-            return redirect(login_url)
+            # http(s) 地址直接 302；自定义协议（如 k3cloud://）渲染落地页唤起，
+            # 避免浏览器把协议地址当导航目标导致标签页停留在"加载中"
+            if login_url.startswith(("http://", "https://")):
+                return redirect(login_url)
+            return render_launch_page(login_url)
 
         logger.error(
             "应用 [%s] handler=%s 协议转换失败, userinfo=%s",

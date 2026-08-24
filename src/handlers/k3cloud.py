@@ -5,7 +5,9 @@
 ① 六元素 [dbid, username, appid, appsecret, timestamp, permitcount]
    按字符序排序 → 无分隔符拼接 → SHA256 hex 得签名 signeddata
 ② 组装登录参数 JSON（origintype=SimPas）→ UTF-8 → Base64 → URL 编码 → ud 参数
-③ 返回 {base_url}/html5/Index.aspx?ud=... 免密登录地址
+③ 按 entry 生成对应免密入口：
+   - html5（默认）：{base_url}/html5/Index.aspx?ud=... 浏览器网页入口
+   - wpf：k3cloud://{host}{path}/Clientbin/.../K3cloudclient.manifest?...&ud=... Windows 客户端唤起入口
 
 前置条件（K3Cloud 管理端）：Administrator 登录数据中心后，
 【系统管理】→【第三方系统登录授权】新增应用获得 appId / appSecret，
@@ -16,7 +18,7 @@ import hashlib
 import json
 import logging
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 # handler 注册名（apps.yaml 中 handler 字段使用）
 NAME = "k3cloud"
@@ -73,7 +75,22 @@ def handle(user_info, config):
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ud = quote(base64.b64encode(raw).decode("ascii"), safe="")
 
+    # 入口形态：html5 网页（默认） / wpf 唤起 Windows 客户端
+    entry = config.get("entry", "html5")
+    if entry == "wpf":
+        # 从 base_url 解析域名与路径，拼 ClickOnce manifest 地址（LoginUrl 按金蝶格式带尾斜杠）
+        parts = urlsplit(base_url)
+        manifest = f"k3cloud://{parts.netloc}{parts.path.rstrip('/')}/Clientbin/K3cloudclient/K3cloudclient.manifest"
+        lcid = payload["lcid"]
+        # 注意：LoginUrl 必须用未编码裸值（金蝶 ClickOnce 不认编码后的地址，实测如此）；ud 保持编码
+        url = f"{manifest}?Lcid={lcid}&ExeType=WPFRUNTIME&LoginUrl={base_url + '/'}&ud={ud}"
+    else:
+        url = f"{base_url}/html5/Index.aspx?ud={ud}"
+
     logger.info(
-        "k3cloud 签名完成（username=%s, timestamp=%s），生成免密登录地址", username, timestamp
+        "k3cloud 签名完成（username=%s, timestamp=%s, entry=%s），生成免密登录地址",
+        username,
+        timestamp,
+        entry,
     )
-    return f"{base_url}/html5/Index.aspx?ud={ud}"
+    return url

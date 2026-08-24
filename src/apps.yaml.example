@@ -56,6 +56,31 @@ apps:
       permitcount: 0
       # 语言 ID：2052 中文（默认）/ 1033 英文 / 3076 繁体
       lcid: 2052
+      # 入口形态：html5 网页入口（默认）/ wpf 唤起 Windows 客户端（k3cloud:// 协议）
+      # 同时提供网页与客户端双入口的做法：参考下方 k3client 段（复制业务参数，改 entry 与凭证）
+      entry: html5
+
+  # 金蝶 K3Cloud Windows 客户端入口（与 k3cloud 段共用同一 dbid/appId/appSecret，
+  # K3Cloud 管理端零额外配置；登录后 302 到 k3cloud:// 协议地址唤起本机客户端，
+  # 需电脑已安装金蝶 ClickOnce 客户端）
+  k3client:
+    authentik:
+      client_id: 你的_CLIENT_ID
+      client_secret: 你的_CLIENT_SECRET
+      metadata_url: https://your-authentik.com/application/o/k3client/.well-known/openid-configuration
+
+    handler: k3cloud
+
+    config:
+      # 业务参数与 k3cloud 段完全相同
+      base_url: https://k3.example.com/K3Cloud
+      dbid: 你的_数据中心ID
+      app_id: 你的_金蝶_APP_ID
+      app_secret: 你的_金蝶_应用密钥
+      permitcount: 0
+      lcid: 2052
+      # 入口形态 wpf：生成 k3cloud:// 地址唤起 Windows 客户端
+      entry: wpf
 
   # ---- 以下为未来新增应用的示例（按需复制修改后取消注释） ----
   # another-app:
